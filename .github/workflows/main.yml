@@ -1,0 +1,83 @@
+name: Build Sonic3AIR iOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        brew update
+        brew install sdl2 libogg libvorbis curl zlib
+
+    - name: Set working directory
+      run: |
+        echo "XCODE_DIR=Oxygen/sonic3air/build/_xcode" >> $GITHUB_ENV
+
+    # ---------------------------------------------
+    # Build command-line End User version
+    # ---------------------------------------------
+    - name: Build End User command-line tool
+      run: |
+        cd "$XCODE_DIR"
+        xcodebuild \
+          -project sonic3air.xcodeproj \
+          -scheme sonic3air_cmd \
+          -configuration Release \
+          build
+
+    # ---------------------------------------------
+    # Package game data
+    # REQUIRES LEGAL GAME DATA PRESENT
+    # ---------------------------------------------
+    - name: Package game data
+      run: |
+        cd "$XCODE_DIR"
+        ./sonic3air_cmd -pack
+
+    # ---------------------------------------------
+    # Copy required .bin files into iOS bundle data
+    # ---------------------------------------------
+    - name: Prepare iOS data folder
+      run: |
+        cd "$XCODE_DIR"
+        mkdir -p data
+        cp gamedata.bin data/
+        cp enginedata.bin data/
+        cp audioremaster.bin data/
+        cp audiodata.bin data/
+        cp saves/scripts.bin data/
+
+    # ---------------------------------------------
+    # Build iOS archive (unsigned)
+    # ---------------------------------------------
+    - name: Build iOS archive
+      run: |
+        cd "$XCODE_DIR"
+        xcodebuild \
+          -scheme sonic3air-ios \
+          -project sonic3air.xcodeproj \
+          -configuration Release \
+          clean archive \
+          -archivePath s3airios.xcarchive \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO
+
+    # ---------------------------------------------
+    # Upload archive
+    # ---------------------------------------------
+    - name: Upload iOS archive
+      uses: actions/upload-artifact@v4
+      with:
+        name: sonic3air-ios-xcarchive
+        path: Oxygen/sonic3air/build/_xcode/s3airios.xcarchive
